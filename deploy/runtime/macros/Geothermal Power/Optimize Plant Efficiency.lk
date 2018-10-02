@@ -1,0 +1,94 @@
+/*@
+
+This macro allows you to download siting considerations from the National Renewable Energy Laboratory's
+Wind Prospector for your potential project site. Some of the information provided by this website is intended for wind installations, 
+but much of the information it provides (such as federal land ownership) is relevant for all project types. 
+The information downloaded is for user reference only; SAM does not use this information in any simulations or calculations.<br><br>
+
+You may visit the Wind Prospector site directly at: <a href="http://maps.nrel.gov/wind_prospector">http://maps.nrel.gov/wind_prospector</a><br><br>
+
+<b>Please note that this information is available for U.S. locations only.</b><br> 
+The macro will still run for locations outside of the U.S., but it will not return any information.<br><br>
+
+<h5>Instructions:</h5>
+<ol>
+<li> Using the interface at the right, select a location to look up. You may:
+<ul>
+<li> Use the location from the weather file, if applicable.
+<li> Enter a latitude and longitude using the inputs at the right.
+<li> Enter an address or city (a pop-up window will appear after you click "Run macro"). <br>
+</ul>
+<li> Enter the radius around the specified location for which you would like to see siting considerations. <br>
+<li> Click 'Run macro' to access the Wind Prospector web service and view a table of possible considerations for your project site.
+</ol>
+@*/
+
+// Macro user interface widgets
+//@ name=location_choice;type=combo;value=Use location from weather file,Enter latitude and longitude,Enter address or city;label=Location to look up
+//@ name=radius;type=number;label=Radius (miles);value=10
+//@ name=input_lat;type=number;label=Latitude input;value=40
+//@ name=input_lon;type=number;label=Longitude input;value=-105
+
+if ( typeof(macro) == 'unknown' ) {
+	msgbox('This macro must be run from within a case.');
+	exit;
+}
+
+
+function optimize_efficiency()
+{
+	optimal_lcoe = 999999;
+	optimal_i = null;
+	
+	// Loop to modify efficiency and calculate LCOE
+	for(i = 30; i <= 100 ; i += 10){
+		geothermal = ssc_module_create_from_case('geothermal');	
+		value('plant_efficiency_input', i);
+		ssc_exec(geothermal, 'geothermal');
+		////Creating and running case for 
+		////cmod_geothermal_costs - binary plant type:
+		cost = ssc_create('geothermal_cost');
+		conversion_type = 0;
+		gross_output = value("gross_output") * 1000;
+		design_temp = ssc_var(geothermal, "design_temp");
+		//msgbox(design_temp);
+		second_law_eff = ssc_var(geothermal, "eff_secondlaw");
+		//msgbox(second_law_eff);
+		ssc_var(cost,'gross_output', gross_output);
+		ssc_var(cost,'design_temp', design_temp);
+		ssc_var(cost,'eff_secondlaw', second_law_eff);
+		ssc_var(cost, "conversion_type", conversion_type);
+		ssc_exec(cost, 'geothermal_costs');	
+		plant_per_kW = ssc_var(cost, "baseline_cost");	
+		value("geotherm.cost.plant_per_kW", plant_per_kW);
+		//msgbox(plant_per_kW);
+		gen = ssc_var(geothermal, 'gen');
+		value('gen', gen);
+		
+		if (financing() == 'Single Owner'){
+			financial = ssc_module_create_from_case('singleowner');
+			ssc_var(financial, 'gen', gen ); 
+			ssc_exec(financial, 'singleowner');
+		} 
+		else if (financing() == 'Leveraged Partnership Flip'){
+			financial = ssc_module_create_from_case('levpartflip');
+			ssc_var(financial, 'gen', gen ); 
+			ssc_exec(financial, 'levpartflip');
+		} 
+		
+		lcoe_nom = ssc_var(financial, 'lcoe_nom');
+		msgbox(lcoe_nom);
+		if( lcoe_nom < optimal_lcoe) 
+		{
+			optimal_lcoe = lcoe_nom; 
+			//msgbox(optimal_lcoe);
+			optimal_i = i;
+		//	msgbox(optimal_i);
+		}
+		
+	}
+	value('plant_efficiency_input', optimal_i);
+	//ssc_free(financial);
+	//ssc_free(geothermal);
+	//ssc_free(cost);
+}
